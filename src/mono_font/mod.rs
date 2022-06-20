@@ -56,7 +56,7 @@ pub use mono_text_style::{MonoTextStyle, MonoTextStyleBuilder};
 
 use crate::{
     geometry::{OriginDimensions, Point, Size},
-    image::{ImageRaw, SubImage},
+    image::{ImageDrawable, ImageRaw, SubImage},
     mono_font::mapping::GlyphMapping,
     pixelcolor::BinaryColor,
     primitives::Rectangle,
@@ -67,7 +67,7 @@ use crate::{
 /// See the [module documentation] for more information about using fonts.
 ///
 /// [module documentation]: index.html
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct MonoFont<'a> {
     /// Raw image data containing the font.
     pub image: ImageRaw<'a, BinaryColor>,
@@ -96,6 +96,63 @@ pub struct MonoFont<'a> {
     pub glyph_mapping: &'a dyn GlyphMapping,
 }
 
+/// A font which can be drawn by a MonoTextStyle.
+pub trait Font<'a>: Clone {
+    /// The type of glyph which the font will return.
+    type Glyph: ImageDrawable<Color = BinaryColor>;
+
+    /// Returns the glyph which represents a certain character in the font, or a suitable replacement character.
+    fn glyph(&'a self, c: char) -> Self::Glyph;
+
+    /// Returns the height of the glpyhs in the font.
+    fn character_height(&self) -> u32;
+
+    /// Spacing between characters.
+    ///
+    /// The spacing defines how many empty pixels are added horizontally between adjacent characters
+    /// on a single line of text.
+    fn character_spacing(&self) -> u32;
+
+    /// The baseline.
+    ///
+    /// Offset from the top of the glyph bounding box to the baseline.
+    fn baseline(&self) -> u32;
+
+    /// Strikethrough decoration dimensions.
+    fn strikethrough(&self) -> DecorationDimensions;
+
+    /// Underline decoration dimensions.
+    fn underline(&self) -> DecorationDimensions;
+
+    /// Calculates the width of a string of characters as they would be rendered by the font.
+    fn measure_string_width(&self, text: &str) -> u32;
+}
+
+impl<'a> Font<'a> for MonoFont<'a> {
+    type Glyph = SubImage<'a, ImageRaw<'a, BinaryColor>>;
+    fn glyph(&'a self, c: char) -> Self::Glyph {
+        self.glyph(c)
+    }
+    fn character_height(&self) -> u32 {
+        self.character_size.height
+    }
+    fn character_spacing(&self) -> u32 {
+        self.character_spacing
+    }
+    fn baseline(&self) -> u32 {
+        self.baseline
+    }
+    fn strikethrough(&self) -> DecorationDimensions {
+        self.strikethrough
+    }
+    fn underline(&self) -> DecorationDimensions {
+        self.underline
+    }
+    fn measure_string_width(&self, text: &str) -> u32 {
+        self.measure_string_width(text)
+    }
+}
+
 impl MonoFont<'_> {
     /// Returns a subimage for a glyph.
     pub(crate) fn glyph(&self, c: char) -> SubImage<'_, ImageRaw<BinaryColor>> {
@@ -117,6 +174,11 @@ impl MonoFont<'_> {
                 self.character_size,
             ),
         )
+    }
+
+    pub(crate) fn measure_string_width(&self, text: &str) -> u32 {
+        (text.len() as u32 * (self.character_size.width + self.character_spacing))
+            .saturating_sub(self.character_spacing)
     }
 }
 

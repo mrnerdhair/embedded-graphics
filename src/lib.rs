@@ -242,5 +242,6 @@ pub mod prelude;
 pub mod primitives;
 pub mod text;
 pub mod transform;
+pub mod variable_font;
 
 pub use embedded_graphics_core::{pixelcolor, Drawable, Pixel};

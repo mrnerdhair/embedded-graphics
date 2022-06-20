@@ -206,7 +206,7 @@ mod tests {
         mono_font::{
             ascii::{FONT_6X13, FONT_6X9},
             tests::assert_text_from_pattern,
-            MonoTextStyle, MonoTextStyleBuilder,
+            MonoFont, MonoTextStyle, MonoTextStyleBuilder,
         },
         pixelcolor::BinaryColor,
         primitives::{Primitive, PrimitiveStyle},
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     #[ignore]
     fn transparent_text_has_zero_size_but_retains_position() {
-        let style = MonoTextStyleBuilder::<BinaryColor>::new()
+        let style = MonoTextStyleBuilder::<BinaryColor, MonoFont>::new()
             .font(&FONT_6X9)
             .build();
 

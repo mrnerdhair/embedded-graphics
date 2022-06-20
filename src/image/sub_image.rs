@@ -17,18 +17,21 @@ use crate::{
 /// [`ImageDrawable`]: trait.ImageDrawable.html
 /// [`sub_image`]: trait.ImageDrawableExt.html#tymethod.sub_image
 /// [module-level documentation]: index.html#sub-images
-#[derive(Debug)]
-pub struct SubImage<'a, T> {
-    parent: &'a T,
-    area: Rectangle,
-}
-
-impl<'a, T> SubImage<'a, T>
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SubImage<'a, T>
 where
     T: ImageDrawable,
 {
-    pub(super) fn new(parent: &'a T, area: &Rectangle) -> Self {
-        let area = parent.bounding_box().intersection(area);
+    pub(super) parent: &'a T,
+    pub(super) area: Rectangle,
+}
+
+impl<'a, T> SubImage<'a, T> 
+where
+    T: ImageDrawable,
+{
+    pub(crate) fn new(parent: &'a T, area: Rectangle) -> Self {
+        let area = parent.bounding_box().intersection(&area);
 
         Self { parent, area }
     }
@@ -36,9 +39,20 @@ where
     pub(crate) fn new_unchecked(parent: &'a T, area: Rectangle) -> Self {
         Self { parent, area }
     }
+
+    pub(crate) fn sub_image(&self, area: Rectangle) -> Self {
+        let area = self.area.intersection(&Rectangle::new(
+            self.area.top_left + area.top_left,
+            area.size,
+        ));
+        SubImage::new_unchecked(self.parent, area)
+    }
 }
 
-impl<T> OriginDimensions for SubImage<'_, T> {
+impl<T> OriginDimensions for SubImage<'_, T>
+where
+    T: ImageDrawable,
+{
     fn size(&self) -> crate::prelude::Size {
         self.area.size
     }

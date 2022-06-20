@@ -2,7 +2,7 @@ use crate::image::SubImage;
 use embedded_graphics_core::{image::ImageDrawable, primitives::Rectangle};
 
 /// Extension trait for image drawables.
-pub trait ImageDrawableExt: Sized {
+pub trait ImageDrawableExt<'a>: ImageDrawable + Sized {
     /// Returns a sub image of this image drawable.
     ///
     /// If any of the given `area` lies outside the bounding box of the parent image, the
@@ -37,14 +37,14 @@ pub trait ImageDrawableExt: Sized {
     ///
     /// # Ok::<(), core::convert::Infallible>(())
     /// ```
-    fn sub_image(&self, area: &Rectangle) -> SubImage<Self>;
+    fn sub_image(&'a self, area: Rectangle) -> SubImage<'a, Self>;
 }
 
-impl<T> ImageDrawableExt for T
+impl<'a, T> ImageDrawableExt<'a> for T
 where
-    T: ImageDrawable,
+    T: ImageDrawable + 'a,
 {
-    fn sub_image(&self, area: &Rectangle) -> SubImage<T> {
+    fn sub_image(&'a self, area: Rectangle) -> SubImage<'a, T> {
         SubImage::new(self, area)
     }
 }

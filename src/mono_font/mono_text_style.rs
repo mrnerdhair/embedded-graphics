@@ -1,10 +1,10 @@
 use crate::{
     draw_target::DrawTarget,
-    geometry::{Point, Size},
+    geometry::{OriginDimensions, Point, Size},
     image::Image,
     mono_font::{
         draw_target::{Background, Both, Foreground, MonoFontDrawTarget},
-        MonoFont,
+        Font, MonoFont,
     },
     pixelcolor::{BinaryColor, PixelColor},
     primitives::Rectangle,
@@ -31,7 +31,10 @@ use az::SaturatingAs;
 /// [`new`]: #method.new
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct MonoTextStyle<'a, C> {
+pub struct MonoTextStyle<'a, C, F>
+where
+    F: Font<'a>,
+{
     /// Text color.
     pub text_color: Option<C>,
 
@@ -45,10 +48,10 @@ pub struct MonoTextStyle<'a, C> {
     pub strikethrough_color: DecorationColor<C>,
 
     /// Font.
-    pub font: &'a MonoFont<'a>,
+    pub font: &'a F,
 }
 
-impl<'a, C: PixelColor> MonoTextStyle<'a, C> {
+impl<'a, C: PixelColor> MonoTextStyle<'a, C, MonoFont<'a>> {
     /// Creates a text style with transparent background.
     pub fn new(font: &'a MonoFont<'a>, text_color: C) -> Self {
         MonoTextStyleBuilder::new()
@@ -56,7 +59,9 @@ impl<'a, C: PixelColor> MonoTextStyle<'a, C> {
             .text_color(text_color)
             .build()
     }
+}
 
+impl<'a, C: PixelColor, F: Font<'a>> MonoTextStyle<'a, C, F> {
     /// Returns `true` if the style is transparent.
     ///
     /// Drawing a `Text` with a transparent `MonoTextStyle` will not draw any pixels.
@@ -69,13 +74,16 @@ impl<'a, C: PixelColor> MonoTextStyle<'a, C> {
             && self.strikethrough_color.is_none()
     }
 
-    fn line_elements<'t>(
-        &self,
+    fn line_elements<'b, 't>(
+        &'b self,
         mut position: Point,
         text: &'t str,
-    ) -> impl Iterator<Item = (Point, LineElement)> + 't {
-        let char_width = self.font.character_size.width as i32;
-        let spacing_width = self.font.character_spacing as i32;
+    ) -> impl Iterator<Item = (Point, LineElement<<F as Font<'a>>::Glyph>)> + 't
+    where
+        'a: 'b,
+        'b: 't,
+    {
+        let spacing_width = self.font.character_spacing() as i32;
 
         let mut chars = text.chars();
         let mut next_char = chars.next();
@@ -90,13 +98,15 @@ impl<'a, C: PixelColor> MonoTextStyle<'a, C> {
 
                 Some((p, LineElement::Spacing))
             } else if let Some(c) = next_char {
+                let glyph = self.font.glyph(c);
+
                 let p = position;
-                position.x += char_width;
+                position.x += glyph.size().width as i32;
 
                 next_char = chars.next();
                 add_spacing = next_char.is_some();
 
-                Some((p, LineElement::Char(c)))
+                Some((p, LineElement::Char(glyph)))
             } else {
                 Some((position, LineElement::Done))
             }
@@ -113,12 +123,12 @@ impl<'a, C: PixelColor> MonoTextStyle<'a, C> {
         D: DrawTarget<Color = C>,
     {
         if let Some(color) = self.strikethrough_color.to_color(self.text_color) {
-            let rect = self.font.strikethrough.to_rectangle(position, width);
+            let rect = self.font.strikethrough().to_rectangle(position, width);
             target.fill_solid(&rect, color)?;
         }
 
         if let Some(color) = self.underline_color.to_color(self.text_color) {
-            let rect = self.font.underline.to_rectangle(position, width);
+            let rect = self.font.underline().to_rectangle(position, width);
             target.fill_solid(&rect, color)?;
         }
 
@@ -136,19 +146,18 @@ impl<'a, C: PixelColor> MonoTextStyle<'a, C> {
     {
         for (p, element) in self.line_elements(position, text) {
             match element {
-                LineElement::Char(c) => {
-                    let glyph = self.font.glyph(c);
+                LineElement::Char(glyph) => {
                     Image::new(&glyph, p).draw(&mut target)?;
                 }
                 // Fill space between characters if background color is set.
-                LineElement::Spacing if self.font.character_spacing > 0 => {
+                LineElement::Spacing if self.font.character_spacing() > 0 => {
                     if self.background_color.is_some() {
                         target.fill_solid(
                             &Rectangle::new(
                                 p,
                                 Size::new(
-                                    self.font.character_spacing,
-                                    self.font.character_size.height,
+                                    self.font.character_spacing(),
+                                    self.font.character_height(),
                                 ),
                             ),
                             BinaryColor::Off,
@@ -169,19 +178,18 @@ impl<'a, C: PixelColor> MonoTextStyle<'a, C> {
             Baseline::Top => 0,
             Baseline::Bottom => self
                 .font
-                .character_size
-                .height
+                .character_height()
                 .saturating_sub(1)
                 .saturating_as(),
             Baseline::Middle => {
-                (self.font.character_size.height.saturating_sub(1) / 2).saturating_as()
+                (self.font.character_height().saturating_sub(1) / 2).saturating_as()
             }
-            Baseline::Alphabetic => self.font.baseline.saturating_as(),
+            Baseline::Alphabetic => self.font.baseline().saturating_as(),
         }
     }
 }
 
-impl<C: PixelColor> TextRenderer for MonoTextStyle<'_, C> {
+impl<'a, C: PixelColor, F: Font<'a>> TextRenderer for MonoTextStyle<'a, C, F> {
     type Color = C;
 
     fn draw_string<D>(
@@ -213,8 +221,7 @@ impl<C: PixelColor> TextRenderer for MonoTextStyle<'_, C> {
                 MonoFontDrawTarget::new(target, Background(background_color)),
             )?,
             (None, None) => {
-                let dx = (self.font.character_size.width + self.font.character_spacing)
-                    * text.len() as u32;
+                let dx = self.font.measure_string_width(text) + self.font.character_spacing();
 
                 position + Size::new(dx, 0)
             }
@@ -243,7 +250,7 @@ impl<C: PixelColor> TextRenderer for MonoTextStyle<'_, C> {
         if width != 0 {
             if let Some(background_color) = self.background_color {
                 target.fill_solid(
-                    &Rectangle::new(position, Size::new(width, self.font.character_size.height)),
+                    &Rectangle::new(position, Size::new(width, self.font.character_height())),
                     background_color,
                 )?;
             }
@@ -257,14 +264,12 @@ impl<C: PixelColor> TextRenderer for MonoTextStyle<'_, C> {
     fn measure_string(&self, text: &str, position: Point, baseline: Baseline) -> TextMetrics {
         let bb_position = position - Point::new(0, self.baseline_offset(baseline));
 
-        let bb_width = (text.len() as u32
-            * (self.font.character_size.width + self.font.character_spacing))
-            .saturating_sub(self.font.character_spacing);
+        let bb_width = self.font.measure_string_width(text);
 
         let bb_height = if self.underline_color != DecorationColor::None {
-            self.font.underline.height + self.font.underline.offset
+            self.font.underline().height + self.font.underline().offset
         } else {
-            self.font.character_size.height
+            self.font.character_height()
         };
 
         let bb_size = Size::new(bb_width, bb_height);
@@ -276,11 +281,11 @@ impl<C: PixelColor> TextRenderer for MonoTextStyle<'_, C> {
     }
 
     fn line_height(&self) -> u32 {
-        self.font.character_size.height
+        self.font.character_height()
     }
 }
 
-impl<C: PixelColor> CharacterStyle for MonoTextStyle<'_, C> {
+impl<'a, C: PixelColor, F: Font<'a>> CharacterStyle for MonoTextStyle<'a, C, F> {
     type Color = C;
 
     fn set_text_color(&mut self, text_color: Option<Self::Color>) {
@@ -300,9 +305,9 @@ impl<C: PixelColor> CharacterStyle for MonoTextStyle<'_, C> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum LineElement {
-    Char(char),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineElement<T> {
+    Char(T),
     Spacing,
     Done,
 }
@@ -380,11 +385,14 @@ enum LineElement {
 /// [`Text`]: ../text/struct.Text.html
 /// [`MonoTextStyle`]: struct.MonoTextStyle.html
 #[derive(Copy, Clone, Debug)]
-pub struct MonoTextStyleBuilder<'a, C> {
-    style: MonoTextStyle<'a, C>,
+pub struct MonoTextStyleBuilder<'a, C, F>
+where
+    F: Font<'a>,
+{
+    style: MonoTextStyle<'a, C, F>,
 }
 
-impl<C> MonoTextStyleBuilder<'_, C> {
+impl<'a, C> MonoTextStyleBuilder<'a, C, MonoFont<'a>> {
     /// Creates a new text style builder.
     pub fn new() -> Self {
         Self {
@@ -399,9 +407,12 @@ impl<C> MonoTextStyleBuilder<'_, C> {
     }
 }
 
-impl<'a, C> MonoTextStyleBuilder<'a, C> {
+impl<'a, C, F> MonoTextStyleBuilder<'a, C, F>
+where
+    F: Font<'a>,
+{
     /// Sets the font.
-    pub fn font<'b>(self, font: &'b MonoFont<'b>) -> MonoTextStyleBuilder<'b, C> {
+    pub fn font<'b, G: Font<'b>>(self, font: &'b G) -> MonoTextStyleBuilder<'b, C, G> {
         let style = MonoTextStyle {
             font,
             background_color: self.style.background_color,
@@ -456,7 +467,7 @@ impl<'a, C> MonoTextStyleBuilder<'a, C> {
     }
 }
 
-impl<C: PixelColor> MonoTextStyleBuilder<'_, C> {
+impl<'a, C: PixelColor, F: Font<'a>> MonoTextStyleBuilder<'a, C, F> {
     /// Sets the text color.
     pub fn text_color(mut self, text_color: C) -> Self {
         self.style.text_color = Some(text_color);
@@ -484,23 +495,25 @@ impl<C: PixelColor> MonoTextStyleBuilder<'_, C> {
 
         self
     }
-}
 
-impl<'a, C: PixelColor> MonoTextStyleBuilder<'a, C> {
     /// Builds the text style.
     ///
     /// This method can only be called after a font was set by using the [`font`] method. All other
     /// settings are optional and they will be set to their default value if they are missing.
     ///
     /// [`font`]: #method.font
-    pub fn build(self) -> MonoTextStyle<'a, C> {
+    pub fn build(self) -> MonoTextStyle<'a, C, F> {
         self.style
     }
 }
 
-impl<'a, C: PixelColor> From<&MonoTextStyle<'a, C>> for MonoTextStyleBuilder<'a, C> {
-    fn from(style: &MonoTextStyle<'a, C>) -> Self {
-        Self { style: *style }
+impl<'a, C: PixelColor, F: Font<'a>> From<&MonoTextStyle<'a, C, F>>
+    for MonoTextStyleBuilder<'a, C, F>
+{
+    fn from(style: &MonoTextStyle<'a, C, F>) -> Self {
+        Self {
+            style: style.clone(),
+        }
     }
 }
 
@@ -531,7 +544,7 @@ mod tests {
     #[test]
     fn builder_default() {
         assert_eq!(
-            MonoTextStyleBuilder::<BinaryColor>::new()
+            MonoTextStyleBuilder::<BinaryColor, MonoFont>::new()
                 .font(&FONT_10X20)
                 .build(),
             MonoTextStyle {
@@ -1046,7 +1059,7 @@ mod tests {
     fn transparent_text_dimensions_one_line() {
         let position = Point::new(5, 5);
 
-        let style = MonoTextStyleBuilder::<BinaryColor>::new()
+        let style = MonoTextStyleBuilder::<BinaryColor, MonoFont>::new()
             .font(&FONT_6X9)
             .build();
         let text = Text::with_baseline("123", position, style, Baseline::Top);
@@ -1069,7 +1082,7 @@ mod tests {
     fn transparent_text_dimensions_one_line_spaced() {
         let position = Point::new(5, 5);
 
-        let style = MonoTextStyleBuilder::<BinaryColor>::new()
+        let style = MonoTextStyleBuilder::<BinaryColor, MonoFont>::new()
             .font(&SPACED_FONT)
             .build();
         let text = Text::with_baseline("123", position, style, Baseline::Top);
@@ -1099,7 +1112,7 @@ mod tests {
     fn transparent_text_dimensions_two_lines() {
         let position = Point::new(5, 5);
 
-        let style = MonoTextStyleBuilder::<BinaryColor>::new()
+        let style = MonoTextStyleBuilder::<BinaryColor, MonoFont>::new()
             .font(&FONT_6X9)
             .build();
         let text = Text::with_baseline("123\n1", position, style, Baseline::Top);
@@ -1128,14 +1141,20 @@ mod tests {
         let mut iter = style.line_elements(Point::new(10, 20), "a");
         assert_eq!(
             iter.next(),
-            Some((Point::new(10, 20), LineElement::Char('a')))
+            Some((
+                Point::new(10, 20),
+                LineElement::Char(SPACED_FONT.glyph('a'))
+            ))
         );
         assert_eq!(iter.next(), Some((Point::new(16, 20), LineElement::Done)));
 
         let mut iter = style.line_elements(Point::new(10, 20), "abc");
         assert_eq!(
             iter.next(),
-            Some((Point::new(10, 20), LineElement::Char('a')))
+            Some((
+                Point::new(10, 20),
+                LineElement::Char(SPACED_FONT.glyph('a'))
+            ))
         );
         assert_eq!(
             iter.next(),
@@ -1143,7 +1162,10 @@ mod tests {
         );
         assert_eq!(
             iter.next(),
-            Some((Point::new(21, 20), LineElement::Char('b')))
+            Some((
+                Point::new(21, 20),
+                LineElement::Char(SPACED_FONT.glyph('b'))
+            ))
         );
         assert_eq!(
             iter.next(),
@@ -1151,7 +1173,10 @@ mod tests {
         );
         assert_eq!(
             iter.next(),
-            Some((Point::new(32, 20), LineElement::Char('c')))
+            Some((
+                Point::new(32, 20),
+                LineElement::Char(SPACED_FONT.glyph('c'))
+            ))
         );
         assert_eq!(iter.next(), Some((Point::new(38, 20), LineElement::Done)));
     }
@@ -1167,6 +1192,7 @@ mod tests {
                 strikethrough: DecorationDimensions::default_strikethrough(2),
                 underline: DecorationDimensions::default_underline(2),
                 glyph_mapping: &mapping::ASCII,
+                width_mapping: None,
             };
 
             let style = MonoTextStyleBuilder::new()
