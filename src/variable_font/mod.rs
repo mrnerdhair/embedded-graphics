@@ -29,7 +29,7 @@ use crate::{
 /// See the [module documentation] for more information about using fonts.
 ///
 /// [module documentation]: index.html
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct VariableFont<'a> {
     /// The underlying monospaced font.
     pub mono_font: MonoFont<'a>,
@@ -45,7 +45,7 @@ impl<'a> Font<'a> for VariableFont<'a> {
         let mono_glyph_size = mono_glyph.size();
         let glyph_width = self.glyph_width_mapping.glyph_width(&self.mono_font, c);
 
-        mono_glyph.sub_image(Rectangle::new(
+        mono_glyph.sub_image(&Rectangle::new(
             Point::new(glyph_width.start.try_into().unwrap(), 0),
             Size::new(glyph_width.range_size(), mono_glyph_size.height),
         ))

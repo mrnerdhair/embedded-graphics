@@ -67,7 +67,7 @@ use crate::{
 /// See the [module documentation] for more information about using fonts.
 ///
 /// [module documentation]: index.html
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct MonoFont<'a> {
     /// Raw image data containing the font.
     pub image: ImageRaw<'a, BinaryColor>,

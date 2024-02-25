@@ -51,9 +51,9 @@ where
     pub font: &'a F,
 }
 
-impl<'a, C: PixelColor> MonoTextStyle<'a, C, MonoFont<'a>> {
+impl<'a, C: PixelColor, F: Font<'a>> MonoTextStyle<'a, C, F> {
     /// Creates a text style with transparent background.
-    pub fn new(font: &'a MonoFont<'a>, text_color: C) -> Self {
+    pub fn new(font: &'a F, text_color: C) -> Self {
         MonoTextStyleBuilder::new()
             .font(font)
             .text_color(text_color)
@@ -1192,7 +1192,6 @@ mod tests {
                 strikethrough: DecorationDimensions::default_strikethrough(2),
                 underline: DecorationDimensions::default_underline(2),
                 glyph_mapping: &mapping::ASCII,
-                width_mapping: None,
             };
 
             let style = MonoTextStyleBuilder::new()

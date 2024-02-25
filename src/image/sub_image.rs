@@ -40,7 +40,7 @@ where
         Self { parent, area }
     }
 
-    pub(crate) fn sub_image(&self, area: Rectangle) -> Self {
+    pub(crate) fn sub_image(&self, area: &Rectangle) -> Self {
         let area = self.area.intersection(&Rectangle::new(
             self.area.top_left + area.top_left,
             area.size,

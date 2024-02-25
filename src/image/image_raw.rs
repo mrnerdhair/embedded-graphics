@@ -1,6 +1,9 @@
 use core::marker::PhantomData;
 
-use embedded_graphics_core::{pixelcolor::BinaryColor, primitives::Rectangle};
+use embedded_graphics_core::{
+    pixelcolor::{BinaryColor, Gray8},
+    primitives::Rectangle,
+};
 
 use crate::{
     draw_target::DrawTarget,
@@ -142,12 +145,7 @@ where
     pub fn new(data: &'a [u8], width: u32) -> Self {
         // Prevent panic for `width == 0` by returning a zero sized image.
         if width == 0 {
-            return Self {
-                data: &[],
-                size: Size::zero(),
-                pixel_type: PhantomData,
-                byte_order: PhantomData,
-            };
+            return Self::default();
         }
 
         let height = data.len() / bytes_per_row(width, C::Raw::BITS_PER_PIXEL);
@@ -175,6 +173,21 @@ where
     }
 }
 
+impl<'a, C, BO> Default for ImageRaw<'a, C, BO>
+where
+    C: PixelColor + From<<C as PixelColor>::Raw>,
+    BO: ByteOrder,
+{
+    fn default() -> Self {
+        Self {
+            data: &[],
+            size: Size::zero(),
+            pixel_type: PhantomData,
+            byte_order: PhantomData,
+        }
+    }
+}
+
 impl<'a> ImageRaw<'a, BinaryColor> {
     /// Creates a new binary image.
     ///
@@ -192,6 +205,33 @@ impl<'a> ImageRaw<'a, BinaryColor> {
     // MSRV: remove this function when const functions with trait bounds are supported
     pub const fn new_binary(data: &'a [u8], width: u32) -> Self {
         let height = data.len() / bytes_per_row(width, 1);
+
+        Self {
+            data,
+            size: Size::new(width, height as u32),
+            pixel_type: PhantomData,
+            byte_order: PhantomData,
+        }
+    }
+}
+
+impl<'a> ImageRaw<'a, Gray8> {
+    /// Creates a new grayscale image.
+    ///
+    /// Due to `const fn` limitations the `new` method cannot be used in `const` contexts. This
+    /// method provides a workaround to create `ImageRaw`s with `Gray8` images.
+    ///
+    /// Only the width of the image needs to be specified. The height of the image will be
+    /// calculated based on the length of the given image data.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `width == 0`.
+    // MSRV: return a zero sized image instead of a panic for Rust >= 1.46.0
+    //       (requires if in const function)
+    // MSRV: remove this function when const functions with trait bounds are supported
+    pub const fn new_gray8(data: &'a [u8], width: u32) -> Self {
+        let height = data.len() / bytes_per_row(width, 8);
 
         Self {
             data,
